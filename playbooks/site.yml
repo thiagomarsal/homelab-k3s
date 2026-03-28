@@ -1,0 +1,45 @@
+---
+# ============================================================
+# Playbook: Full k3s HA cluster install
+#
+# Usage:
+#   ansible-playbook playbooks/site.yml
+#
+# Phases:
+#   1. OS preparation on all nodes
+#   2. Bootstrap first k3s server (k3s-master-1)
+#   3. Join remaining k3s servers (k3s-master-2, k3s-master-3)
+#   4. Join k3s agents (k3s-worker-1)
+#   5. Deploy cluster services (MetalLB, Traefik, Rancher)
+# ============================================================
+
+# Phase 1: Prepare all nodes
+- name: Prepare all nodes
+  hosts: all
+  roles:
+    - common
+
+# Phase 2: Bootstrap first server
+- name: Bootstrap first k3s server
+  hosts: k3s-master-1
+  roles:
+    - k3s-server
+
+# Phase 3: Join remaining servers (serial to avoid etcd race)
+- name: Join remaining k3s servers
+  hosts: servers
+  serial: 1
+  roles:
+    - k3s-server
+
+# Phase 4: Join agents
+- name: Join k3s agents
+  hosts: agents
+  roles:
+    - k3s-agent
+
+# Phase 5: Deploy cluster services (runs on first server only)
+- name: Deploy cluster services
+  hosts: k3s-master-1
+  roles:
+    - rancher

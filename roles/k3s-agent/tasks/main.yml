@@ -1,0 +1,50 @@
+---
+- name: Check if k3s-agent is already installed
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Download k3s install script
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  when: not k3s_binary.stat.exists
+
+- name: Install k3s agent
+  command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: >-
+      agent
+      --server=https://{{ k3s_api_vip }}:{{ k3s_api_port }}
+      --token={{ k3s_token }}
+      --node-name={{ inventory_hostname }}
+      --flannel-iface={{ kubevip_interface }}
+  when: not k3s_binary.stat.exists
+  notify: restart k3s-agent
+
+- name: Wait for agent to register with cluster
+  command: k3s kubectl get node {{ inventory_hostname }}
+  register: agent_result
+  until: agent_result.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  delegate_to: "{{ groups['servers'] | first }}"
+
+- name: Apply node labels
+  command: >-
+    k3s kubectl label node {{ inventory_hostname }}
+    {{ item }} --overwrite
+  loop: "{{ k3s_node_labels | default([]) }}"
+  delegate_to: "{{ groups['servers'] | first }}"
+  changed_when: false
+
+- name: Apply node taints
+  command: >-
+    k3s kubectl taint node {{ inventory_hostname }}
+    {{ item }} --overwrite
+  loop: "{{ k3s_node_taints | default([]) }}"
+  delegate_to: "{{ groups['servers'] | first }}"
+  changed_when: false

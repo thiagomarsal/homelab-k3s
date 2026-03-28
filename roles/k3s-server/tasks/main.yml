@@ -1,0 +1,124 @@
+---
+# ============================================================
+# Phase 1: Install k3s binary on all servers
+# ============================================================
+- name: Check if k3s is already installed
+  stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Download k3s install script
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  when: not k3s_binary.stat.exists
+
+# ============================================================
+# Phase 2: Bootstrap the first server (cluster-init)
+# ============================================================
+- name: Install k3s on first server (bootstrap)
+  command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: >-
+      server
+      --cluster-init
+      --token={{ k3s_token }}
+      --tls-san={{ k3s_api_vip }}
+      --tls-san={{ ansible_host }}
+      --tls-san={{ inventory_hostname }}
+      --disable=servicelb
+      --disable=traefik
+      --write-kubeconfig-mode=644
+      --node-name={{ inventory_hostname }}
+      --flannel-iface={{ kubevip_interface }}
+  when:
+    - k3s_init | default(false)
+    - not k3s_binary.stat.exists
+  notify: restart k3s
+
+- name: Wait for first server to be ready
+  command: k3s kubectl get nodes
+  register: nodes_result
+  until: nodes_result.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: k3s_init | default(false)
+
+# ============================================================
+# Phase 3: Deploy kube-vip on first server
+# ============================================================
+- name: Create kube-vip manifest directory
+  file:
+    path: /var/lib/rancher/k3s/server/manifests
+    state: directory
+    mode: '0755'
+  when: k3s_init | default(false)
+
+- name: Deploy kube-vip DaemonSet manifest
+  template:
+    src: kube-vip-daemonset.yml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
+    mode: '0644'
+  when: k3s_init | default(false)
+
+- name: Wait for kube-vip VIP to be reachable
+  wait_for:
+    host: "{{ k3s_api_vip }}"
+    port: "{{ k3s_api_port }}"
+    timeout: 120
+  when: k3s_init | default(false)
+
+# ============================================================
+# Phase 4: Join remaining servers via VIP
+# ============================================================
+- name: Install k3s on joining servers
+  command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: >-
+      server
+      --server=https://{{ k3s_api_vip }}:{{ k3s_api_port }}
+      --token={{ k3s_token }}
+      --tls-san={{ k3s_api_vip }}
+      --tls-san={{ ansible_host }}
+      --tls-san={{ inventory_hostname }}
+      --disable=servicelb
+      --disable=traefik
+      --write-kubeconfig-mode=644
+      --node-name={{ inventory_hostname }}
+      --flannel-iface={{ kubevip_interface }}
+  when:
+    - not k3s_init | default(false)
+    - not k3s_binary.stat.exists
+  notify: restart k3s
+
+- name: Wait for joining server to be ready
+  command: k3s kubectl get nodes
+  register: join_result
+  until: join_result.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: not k3s_init | default(false)
+
+# ============================================================
+# Phase 5: Fetch kubeconfig (from first server only)
+# ============================================================
+- name: Fetch kubeconfig from first server
+  fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ playbook_dir }}/../kubeconfig.yml"
+    flat: yes
+  when: k3s_init | default(false)
+
+- name: Update kubeconfig to use VIP
+  delegate_to: localhost
+  become: no
+  replace:
+    path: "{{ playbook_dir }}/../kubeconfig.yml"
+    regexp: 'https://127.0.0.1:6443'
+    replace: "https://{{ k3s_api_vip }}:{{ k3s_api_port }}"
+  when: k3s_init | default(false)

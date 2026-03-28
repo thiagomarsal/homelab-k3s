@@ -1,0 +1,147 @@
+---
+# ============================================================
+# Phase 1: Install Helm
+# ============================================================
+- name: Check if Helm is installed
+  stat:
+    path: /usr/local/bin/helm
+  register: helm_binary
+
+- name: Install Helm
+  shell: |
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  when: not helm_binary.stat.exists
+
+# ============================================================
+# Phase 2: Install MetalLB
+# ============================================================
+- name: Add MetalLB Helm repo
+  command: helm repo add metallb https://metallb.github.io/metallb
+  changed_when: false
+
+- name: Update Helm repos
+  command: helm repo update
+  changed_when: false
+
+- name: Install MetalLB
+  command: >-
+    helm upgrade --install metallb metallb/metallb
+    --namespace metallb-system
+    --create-namespace
+    --version {{ metallb_version }}
+    --wait --timeout 5m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Wait for MetalLB pods to be ready
+  command: >-
+    k3s kubectl wait --namespace metallb-system
+    --for=condition=ready pod
+    --selector=app.kubernetes.io/name=metallb
+    --timeout=120s
+  changed_when: false
+
+- name: Deploy MetalLB IP pool and L2 advertisement
+  template:
+    src: metallb-config.yml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/metallb-config.yaml
+    mode: '0644'
+
+# ============================================================
+# Phase 3: Install cert-manager
+# ============================================================
+- name: Add Jetstack Helm repo
+  command: helm repo add jetstack https://charts.jetstack.io
+  changed_when: false
+
+- name: Update Helm repos
+  command: helm repo update
+  changed_when: false
+
+- name: Install cert-manager
+  command: >-
+    helm upgrade --install cert-manager jetstack/cert-manager
+    --namespace cert-manager
+    --create-namespace
+    --version {{ cert_manager_version }}
+    --set crds.enabled=true
+    --wait --timeout 5m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+# ============================================================
+# Phase 4: Install Traefik (custom, since we disabled the bundled one)
+# ============================================================
+- name: Add Traefik Helm repo
+  command: helm repo add traefik https://traefik.github.io/charts
+  changed_when: false
+
+- name: Update Helm repos
+  command: helm repo update
+  changed_when: false
+
+- name: Install Traefik
+  command: >-
+    helm upgrade --install traefik traefik/traefik
+    --namespace traefik
+    --create-namespace
+    --set service.type=LoadBalancer
+    --set ports.web.redirectTo.port=websecure
+    --set providers.kubernetesCRD.enabled=true
+    --set providers.kubernetesIngress.enabled=true
+    --set ingressRoute.dashboard.enabled=false
+    --wait --timeout 5m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+# ============================================================
+# Phase 5: Install Rancher
+# ============================================================
+- name: Add Rancher Helm repo (stable)
+  command: helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
+  changed_when: false
+
+- name: Update Helm repos
+  command: helm repo update
+  changed_when: false
+
+- name: Create cattle-system namespace
+  command: k3s kubectl create namespace cattle-system
+  register: ns_result
+  failed_when: ns_result.rc != 0 and 'already exists' not in ns_result.stderr
+  changed_when: ns_result.rc == 0
+
+- name: Install Rancher
+  command: >-
+    helm upgrade --install rancher rancher-stable/rancher
+    --namespace cattle-system
+    --set hostname={{ rancher_hostname }}
+    --set bootstrapPassword=admin
+    --set replicas=2
+    --set ingress.tls.source=letsEncrypt
+    --set letsEncrypt.email=admin@{{ rancher_hostname }}
+    --set letsEncrypt.ingress.class=traefik
+    --version {{ rancher_version }}
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Wait for Rancher to be ready
+  command: >-
+    k3s kubectl rollout status deployment rancher
+    --namespace cattle-system
+    --timeout=300s
+  changed_when: false
+
+- name: Display Rancher access info
+  debug:
+    msg: |
+      ================================================
+      Rancher is deployed!
+      URL: https://{{ rancher_hostname }}
+      Initial password: admin
+      ================================================
+      Point {{ rancher_hostname }} DNS to your
+      MetalLB IP range (192.168.1.61-199) or add
+      it to your /etc/hosts or Pi-hole.
+      ================================================

@@ -1,0 +1,86 @@
+---
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Update /etc/hosts with cluster nodes
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+    state: present
+  loop: "{{ groups['all'] }}"
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Enable and start qemu-guest-agent
+  systemd:
+    name: qemu-guest-agent
+    enabled: yes
+    state: started
+
+- name: Disable swap
+  command: swapoff -a
+  changed_when: false
+
+- name: Remove swap from fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '\sswap\s'
+    state: absent
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - br_netfilter
+    - overlay
+    - ip_vs
+    - ip_vs_rr
+    - ip_vs_wrr
+    - ip_vs_sh
+
+- name: Persist kernel modules
+  copy:
+    dest: /etc/modules-load.d/k3s.conf
+    content: |
+      br_netfilter
+      overlay
+      ip_vs
+      ip_vs_rr
+      ip_vs_wrr
+      ip_vs_sh
+
+- name: Set sysctl params for k8s networking
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-k3s.conf
+    reload: yes
+  loop:
+    - { key: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { key: "net.ipv4.ip_forward", value: "1" }
+    - { key: "net.ipv4.ip_nonlocal_bind", value: "1" }
+
+- name: Enable open-iscsi for Longhorn support
+  systemd:
+    name: iscsid
+    enabled: yes
+    state: started
+
+- name: Configure passwordless sudo for tfarias
+  lineinfile:
+    path: /etc/sudoers.d/tfarias
+    line: "tfarias ALL=(ALL) NOPASSWD: ALL"
+    create: yes
+    mode: '0440'
+    validate: 'visudo -cf %s'

@@ -1,0 +1,24 @@
+# Secrets
+*.vault
+vault_password
+
+# Generated kubeconfig
+kubeconfig.yml
+
+# Ansible retry files
+*.retry
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

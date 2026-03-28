@@ -1,0 +1,52 @@
+---
+# ============================================================
+# Playbook: Reset k3s cluster
+#
+# Usage:
+#   ansible-playbook playbooks/reset.yml
+#
+# WARNING: This completely removes k3s and all cluster data!
+# ============================================================
+
+- name: Reset k3s agents
+  hosts: agents
+  tasks:
+    - name: Check if k3s-agent-uninstall script exists
+      stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: agent_uninstall
+
+    - name: Uninstall k3s agent
+      command: /usr/local/bin/k3s-agent-uninstall.sh
+      when: agent_uninstall.stat.exists
+
+- name: Reset k3s servers
+  hosts: servers
+  tasks:
+    - name: Check if k3s-uninstall script exists
+      stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: server_uninstall
+
+    - name: Uninstall k3s server
+      command: /usr/local/bin/k3s-uninstall.sh
+      when: server_uninstall.stat.exists
+
+    - name: Clean up residual directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher
+        - /var/lib/rancher
+        - /var/lib/kubelet
+
+- name: Clean up local kubeconfig
+  hosts: localhost
+  connection: local
+  become: no
+  tasks:
+    - name: Remove fetched kubeconfig
+      file:
+        path: "{{ playbook_dir }}/../kubeconfig.yml"
+        state: absent

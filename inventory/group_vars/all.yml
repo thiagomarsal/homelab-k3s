@@ -1,0 +1,38 @@
+---
+# k3s version — pin to a stable release
+k3s_version: "v1.35.2+k3s1"
+
+# Cluster token — used for server-to-server and agent-to-server auth
+# Generate with: openssl rand -hex 32
+# Store securely with: ansible-vault encrypt_string
+k3s_token: "REDACTED"
+
+# API endpoint — kube-vip VIP address
+k3s_api_vip: "192.168.1.60"
+k3s_api_port: 6443
+k3s_api_endpoint: "https://{{ k3s_api_vip }}:{{ k3s_api_port }}"
+
+# kube-vip configuration
+kubevip_version: "v0.8.7"
+kubevip_interface: "eth0"  # Default virtio NIC name in Proxmox VMs
+
+# MetalLB configuration
+metallb_version: "v0.14.9"
+metallb_ip_range: "192.168.1.61-192.168.1.199"
+
+# Rancher configuration
+rancher_hostname: "rancher.local"  # Update with your actual domain
+rancher_version: "v2.10.3"
+cert_manager_version: "v1.16.3"
+
+# Common packages to install on all nodes
+common_packages:
+  - curl
+  - wget
+  - vim
+  - htop
+  - net-tools
+  - open-iscsi
+  - nfs-common
+  - qemu-guest-agent
+  - sudo
