@@ -1,11 +1,20 @@
 ---
 # k3s version — pin to a stable release
-k3s_version: "v1.35.2+k3s1"
+k3s_version: "v1.34.5+k3s1"
 
 # Cluster token — used for server-to-server and agent-to-server auth
 # Generate with: openssl rand -hex 32
 # Store securely with: ansible-vault encrypt_string
-k3s_token: "REDACTED"
+k3s_token: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          32333663363962303033336333383163323536396562643537316332653464646462383534633335
+          3238303235396661616134653738376335373534363264610a613730313633366563356235626538
+          37656666373766383035343438383337316433346232323033343462633035353163336432376435
+          6663303233646466300a616230383430356139366535323936306634366331333030303538636465
+          30396463356437366238373261343138306238643934303266393835343765663831376432616439
+          34616238653563366361356531626330353532653461383530643565623638303336326632383263
+          34383136383462313362363765313136323130363736393733323365323135393234383930316131
+          34363263386131353666
 
 # API endpoint — kube-vip VIP address
 k3s_api_vip: "192.168.1.60"
@@ -21,8 +30,8 @@ metallb_version: "v0.14.9"
 metallb_ip_range: "192.168.1.61-192.168.1.199"
 
 # Rancher configuration
-rancher_hostname: "rancher.local"  # Update with your actual domain
-rancher_version: "v2.10.3"
+rancher_hostname: "rancher.tmf-solutions.com"  # Update with your actual domain
+rancher_version: "2.13.3"
 cert_manager_version: "v1.16.3"
 
 # Common packages to install on all nodes
@@ -36,3 +45,4 @@ common_packages:
   - nfs-common
   - qemu-guest-agent
   - sudo
+traefik_hostname: "traefik.tmf-solutions.com"

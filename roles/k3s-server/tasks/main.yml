@@ -32,11 +32,11 @@
       --disable=traefik
       --write-kubeconfig-mode=644
       --node-name={{ inventory_hostname }}
+      --node-ip={{ ansible_host }}
       --flannel-iface={{ kubevip_interface }}
   when:
     - k3s_init | default(false)
     - not k3s_binary.stat.exists
-  notify: restart k3s
 
 - name: Wait for first server to be ready
   command: k3s kubectl get nodes
@@ -89,11 +89,11 @@
       --disable=traefik
       --write-kubeconfig-mode=644
       --node-name={{ inventory_hostname }}
+      --node-ip={{ ansible_host }}
       --flannel-iface={{ kubevip_interface }}
   when:
     - not k3s_init | default(false)
     - not k3s_binary.stat.exists
-  notify: restart k3s
 
 - name: Wait for joining server to be ready
   command: k3s kubectl get nodes

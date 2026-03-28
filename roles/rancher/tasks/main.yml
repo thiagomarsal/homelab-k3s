@@ -73,26 +73,23 @@
 # Phase 4: Install Traefik (custom, since we disabled the bundled one)
 # ============================================================
 - name: Add Traefik Helm repo
-  command: helm repo add traefik https://traefik.github.io/charts
-  changed_when: false
-
-- name: Update Helm repos
-  command: helm repo update
-  changed_when: false
-
-- name: Install Traefik
   command: >-
     helm upgrade --install traefik traefik/traefik
     --namespace traefik
     --create-namespace
     --set service.type=LoadBalancer
-    --set ports.web.redirectTo.port=websecure
     --set providers.kubernetesCRD.enabled=true
     --set providers.kubernetesIngress.enabled=true
     --set ingressRoute.dashboard.enabled=false
     --wait --timeout 5m
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Deploy Traefik dashboard IngressRoute
+  template:
+    src: traefik-dashboard.yml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/traefik-dashboard.yaml
+    mode: '0644'
 
 # ============================================================
 # Phase 5: Install Rancher
@@ -118,9 +115,7 @@
     --set hostname={{ rancher_hostname }}
     --set bootstrapPassword=admin
     --set replicas=2
-    --set ingress.tls.source=letsEncrypt
-    --set letsEncrypt.email=admin@{{ rancher_hostname }}
-    --set letsEncrypt.ingress.class=traefik
+    --set ingress.tls.source=rancher
     --version {{ rancher_version }}
     --wait --timeout 10m
   environment:
